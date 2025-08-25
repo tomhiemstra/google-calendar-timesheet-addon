@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { format, parseISO } from "date-fns"
-import { isCategoryBillable } from "./utils"
+import { isCategoryBillable } from "@/utils/task-type"
 
 interface WeeklySummaryProps {
   entriesForWeek: any[]
