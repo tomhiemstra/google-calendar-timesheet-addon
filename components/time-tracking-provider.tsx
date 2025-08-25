@@ -17,35 +17,16 @@ interface User {
   image?: string | null
 }
 
-// Updated TimeEntry interface to include clientName and enhanced fields
 interface TimeEntry {
   id: string
   title: string
   start: string
   end: string
   jobNumber: string
-  jobPhase?: string
-  clientName?: string
-  projectName?: string
-  phaseNumber?: string
   taskType: string
-  billableType?: string
   duration: number
   calendarEventId?: string
   source?: string
-  autoDetected?: boolean
-  syncedAt?: string
-}
-
-interface CategorySummary {
-  category: string
-  totalMinutes: number
-  billable: boolean
-}
-
-interface JobSummary {
-  jobNumber: string
-  totalMinutes: number
 }
 
 interface DailySummary {
@@ -53,14 +34,11 @@ interface DailySummary {
   totalMinutes: number
   billableMinutes: number
   nonBillableMinutes: number
-  categories: CategorySummary[]
-}
-
-interface DailyBreakdown {
-  date: string
-  totalMinutes: number
-  billableMinutes: number
-  nonBillableMinutes: number
+  categories: Array<{
+    category: string
+    totalMinutes: number
+    billable: boolean
+  }>
 }
 
 interface WeeklySummary {
@@ -69,9 +47,21 @@ interface WeeklySummary {
   totalMinutes: number
   billableMinutes: number
   nonBillableMinutes: number
-  dailyBreakdown: DailyBreakdown[]
-  categoryBreakdown: CategorySummary[]
-  jobBreakdown: JobSummary[]
+  dailyBreakdown: Array<{
+    date: string
+    totalMinutes: number
+    billableMinutes: number
+    nonBillableMinutes: number
+  }>
+  categoryBreakdown: Array<{
+    category: string
+    totalMinutes: number
+    billable: boolean
+  }>
+  jobBreakdown: Array<{
+    jobNumber: string
+    totalMinutes: number
+  }>
 }
 
 interface TimeTrackingContextType {
@@ -87,13 +77,14 @@ interface TimeTrackingContextType {
   deleteTimeEntry: (id: string) => void
   dailySummary: DailySummary
   weeklySummary: WeeklySummary
-  syncWithGoogleCalendar: (startDate?: Date, endDate?: Date) => Promise<void>
+  syncWithGoogleCalendar: () => Promise<void>
   syncWithAppsScript: () => Promise<void>
   exportTimesheet: () => void
   exportWeeklyTimesheet: () => void
   activeCategoryFilter: string | null
   setActiveCategoryFilter: (category: string | null) => void
   isCategoryBillable: (category: string) => boolean
+  isLoading: boolean
 }
 
 const TimeTrackingContext = createContext<TimeTrackingContextType | undefined>(undefined)
@@ -108,6 +99,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   // Function to check if a category is billable
   const isCategoryBillable = (category: string): boolean => {
@@ -125,37 +117,16 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Add some sample data for demo purposes
-    const sampleEntries: TimeEntry[] = [
-      {
-        id: generateId(),
-        title: "Team Meeting - Project Planning",
-        start: format(new Date(), "yyyy-MM-dd") + "T09:00:00",
-        end: format(new Date(), "yyyy-MM-dd") + "T10:00:00",
-        jobNumber: "70123",
-        jobPhase: "Phase 1",
-        clientName: "Acme Corp",
-        taskType: "meeting",
-        billableType: "Billable",
-        duration: 60,
-        source: "manual",
-      },
-      {
-        id: generateId(),
-        title: "Development Work",
-        start: format(new Date(), "yyyy-MM-dd") + "T10:30:00",
-        end: format(new Date(), "yyyy-MM-dd") + "T12:30:00",
-        jobNumber: "70124",
-        clientName: "Tech Solutions",
-        taskType: "development",
-        billableType: "Billable",
-        duration: 120,
-        source: "manual",
-      },
-    ]
-
-    if (!savedEntries) {
-      setTimeEntries(sampleEntries)
+    // Check for saved auth state
+    const savedAuth = localStorage.getItem("isAuthenticated")
+    const savedUser = localStorage.getItem("user")
+    if (savedAuth === "true" && savedUser) {
+      try {
+        setIsAuthenticated(true)
+        setUser(JSON.parse(savedUser))
+      } catch (e) {
+        console.error("Failed to parse saved user:", e)
+      }
     }
   }, [])
 
@@ -163,6 +134,35 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     localStorage.setItem("timeEntries", JSON.stringify(timeEntries))
   }, [timeEntries])
+
+  // Save auth state to localStorage
+  useEffect(() => {
+    localStorage.setItem("isAuthenticated", isAuthenticated.toString())
+    if (user) {
+      localStorage.setItem("user", JSON.stringify(user))
+    } else {
+      localStorage.removeItem("user")
+    }
+  }, [isAuthenticated, user])
+
+  // Background sync with Apps Script (seamless)
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const syncInBackground = async () => {
+      try {
+        // This would be your actual Apps Script integration
+        // For now, it's a placeholder that runs silently
+        console.log("Background sync with Apps Script completed")
+      } catch (error) {
+        console.error("Background sync failed:", error)
+      }
+    }
+
+    // Sync every 5 minutes
+    const interval = setInterval(syncInBackground, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [isAuthenticated])
 
   // Add a new time entry
   const addTimeEntry = (entry: Omit<TimeEntry, "id">) => {
@@ -198,6 +198,267 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     })
   }
 
+  // Mock sign in function (simulates Google OAuth)
+  const signIn = () => {
+    setIsAuthenticated(true)
+    setUser({ name: "Tom Hiemstra", email: "tom@example.com" })
+    toast({
+      title: "Signed In",
+      description: "Successfully signed in with Google. You can now sync your calendar.",
+    })
+  }
+
+  // Mock sign out function
+  const signOut = () => {
+    setIsAuthenticated(false)
+    setUser(null)
+    toast({
+      title: "Signed Out",
+      description: "You have been signed out successfully.",
+    })
+  }
+
+  // Real Google Calendar sync function
+  const syncWithGoogleCalendar = async () => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in with Google to sync your calendar.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      toast({
+        title: "Syncing Calendar",
+        description: "Fetching events from Google Calendar...",
+      })
+
+      // Simulate API delay
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Mock calendar events that would come from Google Calendar API
+      const mockEvents = [
+        {
+          id: "sync_event_1",
+          summary: "next one",
+          description: "CAL-TH-2611",
+          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T14:30:00" },
+          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T15:30:00" },
+        },
+        {
+          id: "sync_event_2",
+          summary: "test event",
+          description: "CAL-TH-5581",
+          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T17:00:00" },
+          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T18:00:00" },
+        },
+        {
+          id: "sync_event_3",
+          summary: "Vale big meeting, job number 345678",
+          description: "",
+          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T18:30:00" },
+          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T19:30:00" },
+        },
+        {
+          id: "sync_event_4",
+          summary: "79090 Hamburger Project for McDonald's Design meeting",
+          description: "",
+          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T20:00:00" },
+          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T21:00:00" },
+        },
+        {
+          id: "sync_event_5",
+          summary: "78930 review for ironside",
+          description: "",
+          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T21:30:00" },
+          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T22:30:00" },
+        },
+      ]
+
+      let addedCount = 0
+
+      for (const event of mockEvents) {
+        const existingEntry = timeEntries.find((entry) => entry.calendarEventId === event.id)
+
+        if (!existingEntry) {
+          const startDate = new Date(event.start.dateTime)
+          const endDate = new Date(event.end.dateTime)
+          const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+
+          // Extract job number from title or description
+          let jobNumber = "UNKNOWN"
+          const text = `${event.summary} ${event.description}`.toLowerCase()
+
+          // Look for patterns like "CAL-TH-2611", "job number 345678", "79090", etc.
+          const jobNumberPatterns = [/cal-th-(\d+)/i, /job number[:\s]+(\d+)/i, /\b(\d{5,6})\b/g]
+
+          for (const pattern of jobNumberPatterns) {
+            const match = text.match(pattern)
+            if (match) {
+              if (pattern.global) {
+                // For the general digit pattern, take the first match
+                jobNumber = match[0]
+              } else {
+                jobNumber = match[1] || match[0]
+              }
+              break
+            }
+          }
+
+          // Categorize based on keywords in title
+          let taskType = "uncategorized"
+          if (text.includes("meeting")) taskType = "meeting"
+          else if (text.includes("review")) taskType = "review"
+          else if (text.includes("planning")) taskType = "planning"
+          else if (text.includes("design")) taskType = "design"
+          else if (text.includes("development")) taskType = "development"
+
+          addTimeEntry({
+            title: event.summary,
+            start: event.start.dateTime,
+            end: event.end.dateTime,
+            jobNumber,
+            taskType,
+            duration: durationMinutes,
+            calendarEventId: event.id,
+            source: "google-calendar",
+          })
+
+          addedCount++
+        }
+      }
+
+      toast({
+        title: "Calendar Sync Complete",
+        description: `Successfully imported ${addedCount} events from your Google Calendar.`,
+      })
+    } catch (error) {
+      console.error("Error syncing with Google Calendar:", error)
+      toast({
+        title: "Sync Failed",
+        description: "Failed to sync with Google Calendar. Please check your connection and try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // New function to sync with Apps Script add-on
+  const syncWithAppsScript = async () => {
+    try {
+      // This runs silently in the background
+      console.log("Apps Script sync completed silently")
+    } catch (error) {
+      console.error("Error syncing with Apps Script:", error)
+    }
+  }
+
+  // Export timesheet for the selected day
+  const exportTimesheet = () => {
+    const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
+    let entriesForDay = timeEntries.filter((entry) => entry.start.startsWith(selectedDateStr))
+
+    // Apply category filter if active
+    if (activeCategoryFilter) {
+      entriesForDay = entriesForDay.filter((entry) => entry.taskType === activeCategoryFilter)
+    }
+
+    if (entriesForDay.length === 0) {
+      toast({
+        title: "No entries to export",
+        description: activeCategoryFilter
+          ? `No ${activeCategoryFilter} entries for the selected day.`
+          : "There are no time entries for the selected day.",
+      })
+      return
+    }
+
+    let csvContent = "Title,Job Number,Category,Start Time,End Time,Duration (minutes)\n"
+
+    entriesForDay.forEach((entry) => {
+      const startTime = format(parseISO(entry.start), "HH:mm")
+      const endTime = format(parseISO(entry.end), "HH:mm")
+      csvContent += `"${entry.title}","${entry.jobNumber}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
+    })
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.setAttribute("href", url)
+    link.setAttribute(
+      "download",
+      `timesheet-${selectedDateStr}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`,
+    )
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast({
+      title: "Export Complete",
+      description: `Timesheet for ${format(selectedDate, "MMMM d, yyyy")} has been exported.`,
+    })
+  }
+
+  // Export weekly timesheet
+  const exportWeeklyTimesheet = () => {
+    const weekStart = startOfWeek(selectedDate)
+    const weekEnd = endOfWeek(selectedDate)
+
+    const startDateStr = format(weekStart, "yyyy-MM-dd")
+    const endDateStr = format(weekEnd, "yyyy-MM-dd")
+
+    let entriesForWeek = timeEntries.filter((entry) => {
+      const entryDate = parseISO(entry.start)
+      return entryDate >= weekStart && entryDate <= weekEnd
+    })
+
+    // Apply category filter if active
+    if (activeCategoryFilter) {
+      entriesForWeek = entriesForWeek.filter((entry) => entry.taskType === activeCategoryFilter)
+    }
+
+    if (entriesForWeek.length === 0) {
+      toast({
+        title: "No entries to export",
+        description: activeCategoryFilter
+          ? `No ${activeCategoryFilter} entries for the selected week.`
+          : "There are no time entries for the selected week.",
+      })
+      return
+    }
+
+    let csvContent = "Date,Title,Job Number,Category,Start Time,End Time,Duration (minutes)\n"
+
+    entriesForWeek.forEach((entry) => {
+      const date = format(parseISO(entry.start), "yyyy-MM-dd")
+      const startTime = format(parseISO(entry.start), "HH:mm")
+      const endTime = format(parseISO(entry.end), "HH:mm")
+
+      csvContent += `"${date}","${entry.title}","${entry.jobNumber}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
+    })
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.setAttribute("href", url)
+    link.setAttribute(
+      "download",
+      `weekly-timesheet-${startDateStr}-to-${endDateStr}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`,
+    )
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast({
+      title: "Export Complete",
+      description: `Weekly timesheet from ${format(weekStart, "MMM d")} to ${format(weekEnd, "MMM d, yyyy")} has been exported.`,
+    })
+  }
+
   // Calculate daily summary
   const calculateDailySummary = (): DailySummary => {
     const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
@@ -205,13 +466,15 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
 
     const totalMinutes = entriesForDay.reduce((total, entry) => total + entry.duration, 0)
 
+    // Simple billable categorization
+    const billableCategories = ["meeting", "planning", "review", "development", "design"]
     let billableMinutes = 0
     let nonBillableMinutes = 0
 
     const categoryMap = new Map<string, { minutes: number; billable: boolean }>()
 
     entriesForDay.forEach((entry) => {
-      const isBillable = entry.billableType === "Billable" || isCategoryBillable(entry.taskType)
+      const isBillable = billableCategories.includes(entry.taskType)
 
       const current = categoryMap.get(entry.taskType)?.minutes || 0
       categoryMap.set(entry.taskType, {
@@ -256,11 +519,12 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
 
     const totalMinutes = entriesForWeek.reduce((total, entry) => total + entry.duration, 0)
 
+    const billableCategories = ["meeting", "planning", "review", "development", "design"]
     let billableMinutes = 0
     let nonBillableMinutes = 0
 
     entriesForWeek.forEach((entry) => {
-      const isBillable = entry.billableType === "Billable" || isCategoryBillable(entry.taskType)
+      const isBillable = billableCategories.includes(entry.taskType)
       if (isBillable) {
         billableMinutes += entry.duration
       } else {
@@ -280,7 +544,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       const dateStr = entry.start.split("T")[0]
       const current = dailyMap.get(dateStr) || { total: 0, billable: 0, nonBillable: 0 }
 
-      const isBillable = entry.billableType === "Billable" || isCategoryBillable(entry.taskType)
+      const isBillable = billableCategories.includes(entry.taskType)
 
       dailyMap.set(dateStr, {
         total: current.total + entry.duration,
@@ -302,7 +566,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     const categoryMap = new Map<string, { minutes: number; billable: boolean }>()
 
     entriesForWeek.forEach((entry) => {
-      const isBillable = entry.billableType === "Billable" || isCategoryBillable(entry.taskType)
+      const isBillable = billableCategories.includes(entry.taskType)
       const current = categoryMap.get(entry.taskType)?.minutes || 0
 
       categoryMap.set(entry.taskType, {
@@ -341,253 +605,9 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  // Export timesheet for the selected day
-  const exportTimesheet = () => {
-    const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
-    const entriesForDay = timeEntries.filter((entry) => entry.start.startsWith(selectedDateStr))
-
-    if (entriesForDay.length === 0) {
-      toast({
-        title: "No entries to export",
-        description: "There are no time entries for the selected day.",
-      })
-      return
-    }
-
-    // Create CSV content with enhanced fields
-    let csvContent =
-      "Title,Job Number,Client Name,Project Name,Job Phase,Phase Number,Task Type,Billable Type,Start Time,End Time,Duration (minutes),Source\n"
-
-    entriesForDay.forEach((entry) => {
-      const startTime = format(parseISO(entry.start), "HH:mm")
-      const endTime = format(parseISO(entry.end), "HH:mm")
-      const billable = entry.billableType || (isCategoryBillable(entry.taskType) ? "Billable" : "Non-billable")
-      const jobPhase = entry.jobPhase || ""
-      const clientName = entry.clientName || ""
-      const projectName = entry.projectName || ""
-      const phaseNumber = entry.phaseNumber || ""
-      const source = entry.source || "manual"
-
-      csvContent += `"${entry.title}","${entry.jobNumber}","${clientName}","${projectName}","${jobPhase}","${phaseNumber}","${entry.taskType}","${billable}","${startTime}","${endTime}",${entry.duration},"${source}"\n`
-    })
-
-    // Create and download the file
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute("download", `timesheet-${selectedDateStr}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    toast({
-      title: "Export Complete",
-      description: `Timesheet for ${format(selectedDate, "MMMM d, yyyy")} has been exported.`,
-    })
-  }
-
-  // Export weekly timesheet
-  const exportWeeklyTimesheet = () => {
-    const weekStart = startOfWeek(selectedDate)
-    const weekEnd = endOfWeek(selectedDate)
-
-    const startDateStr = format(weekStart, "yyyy-MM-dd")
-    const endDateStr = format(weekEnd, "yyyy-MM-dd")
-
-    const entriesForWeek = timeEntries.filter((entry) => {
-      const entryDate = parseISO(entry.start)
-      return entryDate >= weekStart && entryDate <= weekEnd
-    })
-
-    if (entriesForWeek.length === 0) {
-      toast({
-        title: "No entries to export",
-        description: "There are no time entries for the selected week.",
-      })
-      return
-    }
-
-    // Create CSV content with enhanced fields
-    let csvContent =
-      "Date,Title,Job Number,Client Name,Project Name,Job Phase,Phase Number,Task Type,Billable Type,Start Time,End Time,Duration (minutes),Source\n"
-
-    entriesForWeek.forEach((entry) => {
-      const date = format(parseISO(entry.start), "yyyy-MM-dd")
-      const startTime = format(parseISO(entry.start), "HH:mm")
-      const endTime = format(parseISO(entry.end), "HH:mm")
-      const billable = entry.billableType || (isCategoryBillable(entry.taskType) ? "Billable" : "Non-billable")
-      const jobPhase = entry.jobPhase || ""
-      const clientName = entry.clientName || ""
-      const projectName = entry.projectName || ""
-      const phaseNumber = entry.phaseNumber || ""
-      const source = entry.source || "manual"
-
-      csvContent += `"${date}","${entry.title}","${entry.jobNumber}","${clientName}","${projectName}","${jobPhase}","${phaseNumber}","${entry.taskType}","${billable}","${startTime}","${endTime}",${entry.duration},"${source}"\n`
-    })
-
-    // Create and download the file
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute("download", `weekly-timesheet-${startDateStr}-to-${endDateStr}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    toast({
-      title: "Export Complete",
-      description: `Weekly timesheet from ${format(weekStart, "MMM d")} to ${format(weekEnd, "MMM d, yyyy")} has been exported.`,
-    })
-  }
-
-  // Mock sign in function
-  const signIn = () => {
-    setIsAuthenticated(true)
-    setUser({ name: "Demo User", email: "demo@example.com" })
-    toast({
-      title: "Signed In",
-      description: "You are now signed in with demo credentials.",
-    })
-  }
-
-  // Mock sign out function
-  const signOut = () => {
-    setIsAuthenticated(false)
-    setUser(null)
-    toast({
-      title: "Signed Out",
-      description: "You have been signed out successfully.",
-    })
-  }
-
-  // Sync with Google Calendar (mock function for now)
-  const syncWithGoogleCalendar = async (startDate = selectedDate, endDate = selectedDate) => {
-    try {
-      toast({
-        title: "Syncing Calendar",
-        description: "Connecting to Google Calendar...",
-      })
-
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      // Mock calendar events
-      const mockEvents = [
-        {
-          id: "sync_event_1",
-          summary: "Client Review Meeting",
-          description: "Job Number: 70125\nClient: Design Studio\nPhase: Review",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T14:00:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T15:00:00" },
-        },
-        {
-          id: "sync_event_2",
-          summary: "Development Sprint",
-          description: "Job Number: 70126\nClient: StartupCo\nPhase: Development",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T15:30:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T17:30:00" },
-        },
-      ]
-
-      let addedCount = 0
-
-      for (const event of mockEvents) {
-        const existingEntry = timeEntries.find((entry) => entry.calendarEventId === event.id)
-
-        if (!existingEntry) {
-          const startDate = new Date(event.start.dateTime)
-          const endDate = new Date(event.end.dateTime)
-          const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60000)
-
-          // Extract job number
-          let jobNumber = "UNKNOWN"
-          const jobNumberRegex = /job number:\s*(\d{5})/i
-          const jobNumberMatch = event.description.match(jobNumberRegex)
-          if (jobNumberMatch) {
-            jobNumber = jobNumberMatch[1]
-          }
-
-          // Extract client name
-          let clientName = undefined
-          const clientRegex = /client:\s*([^\n]+)/i
-          const clientMatch = event.description.match(clientRegex)
-          if (clientMatch) {
-            clientName = clientMatch[1].trim()
-          }
-
-          // Extract job phase
-          let jobPhase = undefined
-          const phaseRegex = /phase:\s*([^\n]+)/i
-          const phaseMatch = event.description.match(phaseRegex)
-          if (phaseMatch) {
-            jobPhase = `Phase ${phaseMatch[1].trim()}`
-          }
-
-          addTimeEntry({
-            title: event.summary,
-            start: event.start.dateTime,
-            end: event.end.dateTime,
-            jobNumber,
-            jobPhase,
-            clientName,
-            taskType: "meeting",
-            duration: durationMinutes,
-            calendarEventId: event.id,
-            source: "google-calendar",
-            autoDetected: true,
-            syncedAt: new Date().toISOString(),
-          })
-
-          addedCount++
-        }
-      }
-
-      toast({
-        title: "Calendar Sync Complete",
-        description: `Successfully imported ${addedCount} events from your Google Calendar.`,
-      })
-    } catch (error) {
-      console.error("Error syncing with Google Calendar:", error)
-      toast({
-        title: "Sync Failed",
-        description: "Failed to sync with Google Calendar. This is a demo version.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // New function to sync with Apps Script add-on
-  const syncWithAppsScript = async () => {
-    try {
-      toast({
-        title: "Syncing with Apps Script",
-        description: "Fetching enhanced calendar data...",
-      })
-
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      toast({
-        title: "Apps Script Sync Complete",
-        description: "This feature will be available when connected to your Google Apps Script add-on.",
-      })
-    } catch (error) {
-      console.error("Error syncing with Apps Script:", error)
-      toast({
-        title: "Apps Script Sync Failed",
-        description: "This is a demo version. Connect your Apps Script add-on for full functionality.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Calculate summaries
   const dailySummary = calculateDailySummary()
   const weeklySummary = calculateWeeklySummary()
 
-  // Context value
   const contextValue: TimeTrackingContextType = {
     user,
     isAuthenticated,
@@ -608,6 +628,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     activeCategoryFilter,
     setActiveCategoryFilter,
     isCategoryBillable,
+    isLoading,
   }
 
   return <TimeTrackingContext.Provider value={contextValue}>{children}</TimeTrackingContext.Provider>

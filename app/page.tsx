@@ -1,82 +1,71 @@
 "use client"
 
 import { TimeTrackingProvider } from "@/components/time-tracking-provider"
-import { CalendarView } from "@/components/calendar-view"
-import TimeEntryList from "@/components/time-entry-list"
-import WeeklySummary from "@/components/weekly-summary"
+import { CalendarSection } from "@/components/calendar-section"
+import { TimeEntriesSection } from "@/components/time-entries-section"
+import { DailySummary } from "@/components/daily-summary"
+import { WeeklySummary } from "@/components/weekly-summary"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { useTimeTracking } from "@/components/time-tracking-provider"
-import { format } from "date-fns"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Clock } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useState } from "react"
 
 function TimeTrackerContent() {
-  const { timeEntries, selectedDate, dailySummary, weeklySummary } = useTimeTracking()
-
-  // Filter entries for the selected date
-  const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
-  const entriesForDay = timeEntries.filter((entry) => entry.start.startsWith(selectedDateStr))
+  const { selectedDate } = useTimeTracking()
+  const [activeView, setActiveView] = useState<"daily" | "weekly">("daily")
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-4">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-center mb-2">TimeTracker Buddy</h1>
-          <p className="text-center text-muted-foreground">Track your time with Google Calendar integration</p>
-        </header>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Today's Total</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{Math.round((dailySummary.totalMinutes / 60) * 100) / 100}h</div>
-              <p className="text-xs text-muted-foreground">{dailySummary.totalMinutes} minutes</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Billable Hours</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {Math.round((dailySummary.billableMinutes / 60) * 100) / 100}h
-              </div>
-              <p className="text-xs text-muted-foreground">{dailySummary.billableMinutes} minutes</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Non-Billable</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                {Math.round((dailySummary.nonBillableMinutes / 60) * 100) / 100}h
-              </div>
-              <p className="text-xs text-muted-foreground">{dailySummary.nonBillableMinutes} minutes</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column - Calendar */}
-          <div className="space-y-6">
-            <CalendarView />
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Clock className="h-5 w-5 text-gray-600" />
+            <h1 className="text-lg font-semibold text-gray-900">TimeTracker Buddy</h1>
           </div>
-
-          {/* Right Column - Time Entries */}
-          <div className="space-y-6">
-            <TimeEntryList entries={entriesForDay} day={selectedDateStr} />
+          <div className="flex items-center space-x-3">
+            <span className="text-sm text-gray-600">Tom Hiemstra</span>
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="bg-red-500 text-white text-sm">TH</AvatarFallback>
+            </Avatar>
           </div>
         </div>
+      </header>
 
-        {/* Weekly Summary */}
-        <div className="mt-6">
-          <WeeklySummary entriesForWeek={weeklySummary.dailyBreakdown} />
+      {/* Main Content */}
+      <div className="flex">
+        {/* Left Column */}
+        <div className="flex-1 p-6 space-y-6">
+          <CalendarSection />
+          <TimeEntriesSection />
+        </div>
+
+        {/* Right Column */}
+        <div className="w-80 bg-white border-l border-gray-200 p-6">
+          {/* View Toggle */}
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={() => setActiveView("daily")}
+              className={`text-sm font-medium ${
+                activeView === "daily" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Daily View
+            </button>
+            <button
+              onClick={() => setActiveView("weekly")}
+              className={`text-sm font-medium ${
+                activeView === "weekly" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Weekly View
+            </button>
+          </div>
+
+          {/* Content based on active view */}
+          {activeView === "daily" ? <DailySummary /> : <WeeklySummary />}
         </div>
       </div>
       <Toaster />
@@ -86,7 +75,7 @@ function TimeTrackerContent() {
 
 export default function HomePage() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
       <TimeTrackingProvider>
         <TimeTrackerContent />
       </TimeTrackingProvider>

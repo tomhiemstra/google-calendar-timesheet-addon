@@ -5,21 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon, RefreshCw, Zap, LogIn, LogOut } from "lucide-react"
+import { CalendarIcon, RefreshCw, Zap } from "lucide-react"
 import { format, startOfWeek, endOfWeek } from "date-fns"
 import { useState } from "react"
 
 export function CalendarView() {
-  const {
-    selectedDate,
-    setSelectedDate,
-    syncWithGoogleCalendar,
-    syncWithAppsScript,
-    isAuthenticated,
-    user,
-    signIn,
-    signOut,
-  } = useTimeTracking()
+  const { selectedDate, setSelectedDate, syncWithGoogleCalendar, syncWithAppsScript } = useTimeTracking()
 
   const [isSyncing, setIsSyncing] = useState(false)
   const [isAppsScriptSyncing, setIsAppsScriptSyncing] = useState(false)
@@ -57,26 +48,6 @@ export function CalendarView() {
           <CardDescription>View and sync your Google Calendar events</CardDescription>
         </div>
         <div className="flex items-center space-x-2">
-          {/* Authentication Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={isAuthenticated ? signOut : signIn}
-            className={isAuthenticated ? "text-green-600" : ""}
-          >
-            {isAuthenticated ? (
-              <>
-                <LogOut className="h-4 w-4 mr-1" />
-                {user?.name || "Sign Out"}
-              </>
-            ) : (
-              <>
-                <LogIn className="h-4 w-4 mr-1" />
-                Demo Sign In
-              </>
-            )}
-          </Button>
-
           <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" className="justify-start text-left font-normal bg-transparent">
@@ -127,11 +98,7 @@ export function CalendarView() {
       </CardHeader>
       <CardContent>
         <div className="text-sm text-muted-foreground space-y-2">
-          <p>
-            {isAuthenticated
-              ? "Select a date to view and manage time entries. Use the sync buttons to import events:"
-              : "This is a demo version. Sign in to test the sync functionality with mock data."}
-          </p>
+          <p>Select a date to view and manage time entries. Use the sync buttons to import events:</p>
           <div className="flex flex-col space-y-1 text-xs">
             <div className="flex items-center">
               <Zap className="h-3 w-3 mr-1 text-blue-500" />
@@ -147,11 +114,9 @@ export function CalendarView() {
             </div>
           </div>
         </div>
-        {!isAuthenticated && (
-          <div className="mt-2 p-2 bg-blue-50 text-blue-700 text-sm rounded-md">
-            💡 This is a demo version with sample data. Click "Demo Sign In" to test sync functionality.
-          </div>
-        )}
+        <div className="mt-2 p-2 bg-blue-50 text-blue-700 text-sm rounded-md">
+          💡 This is a demo version with sample data. Sync buttons will add mock calendar events.
+        </div>
       </CardContent>
     </Card>
   )
