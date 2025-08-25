@@ -1,5 +1,9 @@
 // API functions for time entry management
-import { v4 as uuidv4 } from "uuid"
+
+// Simple ID generator to replace uuid
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+}
 
 export interface TimeEntry {
   id: string
@@ -24,7 +28,7 @@ export interface TimeEntry {
 export function addTimeEntry(entry: Omit<TimeEntry, "id">): TimeEntry {
   const newEntry: TimeEntry = {
     ...entry,
-    id: uuidv4(),
+    id: generateId(),
   }
 
   // In a real app, this would save to a database

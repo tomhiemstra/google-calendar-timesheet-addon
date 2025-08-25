@@ -2,9 +2,13 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { v4 as uuidv4 } from "uuid"
 import { format, startOfWeek, endOfWeek, parseISO, addDays } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
+
+// Simple ID generator to replace uuid
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+}
 
 // Define the types
 interface User {
@@ -124,7 +128,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     // Add some sample data for demo purposes
     const sampleEntries: TimeEntry[] = [
       {
-        id: uuidv4(),
+        id: generateId(),
         title: "Team Meeting - Project Planning",
         start: format(new Date(), "yyyy-MM-dd") + "T09:00:00",
         end: format(new Date(), "yyyy-MM-dd") + "T10:00:00",
@@ -137,7 +141,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         source: "manual",
       },
       {
-        id: uuidv4(),
+        id: generateId(),
         title: "Development Work",
         start: format(new Date(), "yyyy-MM-dd") + "T10:30:00",
         end: format(new Date(), "yyyy-MM-dd") + "T12:30:00",
@@ -164,7 +168,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   const addTimeEntry = (entry: Omit<TimeEntry, "id">) => {
     const newEntry = {
       ...entry,
-      id: uuidv4(),
+      id: generateId(),
     }
     setTimeEntries((prev) => [...prev, newEntry])
 
