@@ -6,6 +6,7 @@ import { format, startOfWeek, endOfWeek, parseISO, addDays } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
 import { googleCalendarService, type GoogleUser } from "@/lib/google-auth"
 import { extractJobNumber, extractClientName, extractJobPhase, categorizeTaskType } from "@/utils/job-extraction"
+import { apiClient } from "@/lib/api-client"
 
 // Simple ID generator to replace uuid
 function generateId(): string {
@@ -76,8 +77,8 @@ interface TimeTrackingContextType {
   dailySummary: DailySummary
   weeklySummary: WeeklySummary
   syncWithGoogleCalendar: () => Promise<void>
-  exportTimesheet: () => void
-  exportWeeklyTimesheet: () => void
+  exportTimesheet: () => Promise<void>
+  exportWeeklyTimesheet: () => Promise<void>
   activeCategoryFilter: string | null
   setActiveCategoryFilter: (category: string | null) => void
   isCategoryBillable: (category: string) => boolean
@@ -202,7 +203,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     })
   }
 
-  // Real Google Calendar sync
+  // Real Google Calendar sync using our API
   const syncWithGoogleCalendar = async () => {
     if (!isAuthenticated || !user) {
       toast({
@@ -223,31 +224,29 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       const weekStart = startOfWeek(selectedDate)
       const weekEnd = endOfWeek(selectedDate)
 
-      const events = await googleCalendarService.getCalendarEvents(weekStart, weekEnd)
+      // Use our API client instead of direct Google API calls
+      const events = await apiClient.syncCalendar(user.accessToken, weekStart, weekEnd)
       let addedCount = 0
 
       for (const event of events) {
-        // Skip all-day events or events without proper time
-        if (!event.start?.dateTime || !event.end?.dateTime) continue
-
         const existingEntry = timeEntries.find((entry) => entry.calendarEventId === event.id)
 
         if (!existingEntry) {
-          const startDate = new Date(event.start.dateTime)
-          const endDate = new Date(event.end.dateTime)
+          const startDate = new Date(event.start)
+          const endDate = new Date(event.end)
           const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60000)
 
           // Extract information from event
-          const fullText = `${event.summary || ""} ${event.description || ""}`
+          const fullText = `${event.title || ""} ${event.description || ""}`
           const jobNumber = extractJobNumber(fullText)
           const clientName = extractClientName(fullText)
           const jobPhase = extractJobPhase(fullText)
-          const taskType = categorizeTaskType(event.summary || "", event.description)
+          const taskType = categorizeTaskType(event.title || "", event.description)
 
           addTimeEntry({
-            title: event.summary || "Untitled Event",
-            start: event.start.dateTime,
-            end: event.end.dateTime,
+            title: event.title || "Untitled Event",
+            start: event.start,
+            end: event.end,
             jobNumber,
             jobPhase,
             clientName,
@@ -277,106 +276,61 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  // Export timesheet for the selected day
-  const exportTimesheet = () => {
-    const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
-    let entriesForDay = timeEntries.filter((entry) => entry.start.startsWith(selectedDateStr))
-
-    // Apply category filter if active
-    if (activeCategoryFilter) {
-      entriesForDay = entriesForDay.filter((entry) => entry.taskType === activeCategoryFilter)
-    }
-
-    if (entriesForDay.length === 0) {
-      toast({
-        title: "No entries to export",
-        description: activeCategoryFilter
-          ? `No ${activeCategoryFilter} entries for the selected day.`
-          : "There are no time entries for the selected day.",
+  // Export timesheet using API
+  const exportTimesheet = async () => {
+    try {
+      const blob = await apiClient.exportTimesheet({
+        format: "csv",
+        startDate: selectedDate,
+        endDate: selectedDate,
+        category: activeCategoryFilter || undefined,
       })
-      return
+
+      const filename = `timesheet-${format(selectedDate, "yyyy-MM-dd")}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`
+      apiClient.downloadFile(blob as Blob, filename)
+
+      toast({
+        title: "Export Complete",
+        description: `Timesheet for ${format(selectedDate, "MMMM d, yyyy")} has been exported.`,
+      })
+    } catch (error) {
+      console.error("Export failed:", error)
+      toast({
+        title: "Export Failed",
+        description: "Failed to export timesheet. Please try again.",
+        variant: "destructive",
+      })
     }
-
-    let csvContent = "Title,Job Number,Client,Phase,Category,Start Time,End Time,Duration (minutes)\n"
-
-    entriesForDay.forEach((entry) => {
-      const startTime = format(parseISO(entry.start), "HH:mm")
-      const endTime = format(parseISO(entry.end), "HH:mm")
-      csvContent += `"${entry.title}","${entry.jobNumber}","${entry.clientName || ""}","${entry.jobPhase || ""}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
-    })
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute(
-      "download",
-      `timesheet-${selectedDateStr}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`,
-    )
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    toast({
-      title: "Export Complete",
-      description: `Timesheet for ${format(selectedDate, "MMMM d, yyyy")} has been exported.`,
-    })
   }
 
-  // Export weekly timesheet
-  const exportWeeklyTimesheet = () => {
-    const weekStart = startOfWeek(selectedDate)
-    const weekEnd = endOfWeek(selectedDate)
+  // Export weekly timesheet using API
+  const exportWeeklyTimesheet = async () => {
+    try {
+      const weekStart = startOfWeek(selectedDate)
+      const weekEnd = endOfWeek(selectedDate)
 
-    const startDateStr = format(weekStart, "yyyy-MM-dd")
-    const endDateStr = format(weekEnd, "yyyy-MM-dd")
-
-    let entriesForWeek = timeEntries.filter((entry) => {
-      const entryDate = parseISO(entry.start)
-      return entryDate >= weekStart && entryDate <= weekEnd
-    })
-
-    // Apply category filter if active
-    if (activeCategoryFilter) {
-      entriesForWeek = entriesForWeek.filter((entry) => entry.taskType === activeCategoryFilter)
-    }
-
-    if (entriesForWeek.length === 0) {
-      toast({
-        title: "No entries to export",
-        description: activeCategoryFilter
-          ? `No ${activeCategoryFilter} entries for the selected week.`
-          : "There are no time entries for the selected week.",
+      const blob = await apiClient.exportTimesheet({
+        format: "csv",
+        startDate: weekStart,
+        endDate: weekEnd,
+        category: activeCategoryFilter || undefined,
       })
-      return
+
+      const filename = `weekly-timesheet-${format(weekStart, "yyyy-MM-dd")}-to-${format(weekEnd, "yyyy-MM-dd")}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`
+      apiClient.downloadFile(blob as Blob, filename)
+
+      toast({
+        title: "Export Complete",
+        description: `Weekly timesheet from ${format(weekStart, "MMM d")} to ${format(weekEnd, "MMM d, yyyy")} has been exported.`,
+      })
+    } catch (error) {
+      console.error("Weekly export failed:", error)
+      toast({
+        title: "Export Failed",
+        description: "Failed to export weekly timesheet. Please try again.",
+        variant: "destructive",
+      })
     }
-
-    let csvContent = "Date,Title,Job Number,Client,Phase,Category,Start Time,End Time,Duration (minutes)\n"
-
-    entriesForWeek.forEach((entry) => {
-      const date = format(parseISO(entry.start), "yyyy-MM-dd")
-      const startTime = format(parseISO(entry.start), "HH:mm")
-      const endTime = format(parseISO(entry.end), "HH:mm")
-
-      csvContent += `"${date}","${entry.title}","${entry.jobNumber}","${entry.clientName || ""}","${entry.jobPhase || ""}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
-    })
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute(
-      "download",
-      `weekly-timesheet-${startDateStr}-to-${endDateStr}${activeCategoryFilter ? `-${activeCategoryFilter}` : ""}.csv`,
-    )
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    toast({
-      title: "Export Complete",
-      description: `Weekly timesheet from ${format(weekStart, "MMM d")} to ${format(weekEnd, "MMM d, yyyy")} has been exported.`,
-    })
   }
 
   // Calculate daily summary
