@@ -4,6 +4,8 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, parseISO, addDays } from "date-fns"
 import { useToast } from "@/components/ui/use-toast"
+import { googleCalendarService, type GoogleUser } from "@/lib/google-auth"
+import { extractJobNumber, extractClientName, extractJobPhase, categorizeTaskType } from "@/utils/job-extraction"
 
 // Simple ID generator to replace uuid
 function generateId(): string {
@@ -11,18 +13,14 @@ function generateId(): string {
 }
 
 // Define the types
-interface User {
-  name?: string | null
-  email?: string | null
-  image?: string | null
-}
-
 interface TimeEntry {
   id: string
   title: string
   start: string
   end: string
   jobNumber: string
+  jobPhase?: string
+  clientName?: string
   taskType: string
   duration: number
   calendarEventId?: string
@@ -65,9 +63,9 @@ interface WeeklySummary {
 }
 
 interface TimeTrackingContextType {
-  user: User | null
+  user: GoogleUser | null
   isAuthenticated: boolean
-  signIn: () => void
+  signIn: (googleUser: GoogleUser) => void
   signOut: () => void
   selectedDate: Date
   setSelectedDate: (date: Date) => void
@@ -78,7 +76,6 @@ interface TimeTrackingContextType {
   dailySummary: DailySummary
   weeklySummary: WeeklySummary
   syncWithGoogleCalendar: () => Promise<void>
-  syncWithAppsScript: () => Promise<void>
   exportTimesheet: () => void
   exportWeeklyTimesheet: () => void
   activeCategoryFilter: string | null
@@ -98,7 +95,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([])
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<GoogleUser | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
   // Function to check if a category is billable
@@ -122,8 +119,10 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     const savedUser = localStorage.getItem("user")
     if (savedAuth === "true" && savedUser) {
       try {
+        const userData = JSON.parse(savedUser)
         setIsAuthenticated(true)
-        setUser(JSON.parse(savedUser))
+        setUser(userData)
+        googleCalendarService.setAccessToken(userData.accessToken)
       } catch (e) {
         console.error("Failed to parse saved user:", e)
       }
@@ -144,25 +143,6 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       localStorage.removeItem("user")
     }
   }, [isAuthenticated, user])
-
-  // Background sync with Apps Script (seamless)
-  useEffect(() => {
-    if (!isAuthenticated) return
-
-    const syncInBackground = async () => {
-      try {
-        // This would be your actual Apps Script integration
-        // For now, it's a placeholder that runs silently
-        console.log("Background sync with Apps Script completed")
-      } catch (error) {
-        console.error("Background sync failed:", error)
-      }
-    }
-
-    // Sync every 5 minutes
-    const interval = setInterval(syncInBackground, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [isAuthenticated])
 
   // Add a new time entry
   const addTimeEntry = (entry: Omit<TimeEntry, "id">) => {
@@ -198,29 +178,33 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     })
   }
 
-  // Mock sign in function (simulates Google OAuth)
-  const signIn = () => {
+  // Real Google sign in
+  const signIn = (googleUser: GoogleUser) => {
     setIsAuthenticated(true)
-    setUser({ name: "Tom Hiemstra", email: "tom@example.com" })
+    setUser(googleUser)
+    googleCalendarService.setAccessToken(googleUser.accessToken)
+
     toast({
-      title: "Signed In",
-      description: "Successfully signed in with Google. You can now sync your calendar.",
+      title: "Signed In Successfully",
+      description: `Welcome ${googleUser.name}! You can now sync your Google Calendar.`,
     })
   }
 
-  // Mock sign out function
+  // Sign out
   const signOut = () => {
     setIsAuthenticated(false)
     setUser(null)
+    googleCalendarService.signOut()
+
     toast({
       title: "Signed Out",
       description: "You have been signed out successfully.",
     })
   }
 
-  // Real Google Calendar sync function
+  // Real Google Calendar sync
   const syncWithGoogleCalendar = async () => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !user) {
       toast({
         title: "Authentication Required",
         description: "Please sign in with Google to sync your calendar.",
@@ -233,54 +217,19 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     try {
       toast({
         title: "Syncing Calendar",
-        description: "Fetching events from Google Calendar...",
+        description: "Fetching events from your Google Calendar...",
       })
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const weekStart = startOfWeek(selectedDate)
+      const weekEnd = endOfWeek(selectedDate)
 
-      // Mock calendar events that would come from Google Calendar API
-      const mockEvents = [
-        {
-          id: "sync_event_1",
-          summary: "next one",
-          description: "CAL-TH-2611",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T14:30:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T15:30:00" },
-        },
-        {
-          id: "sync_event_2",
-          summary: "test event",
-          description: "CAL-TH-5581",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T17:00:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T18:00:00" },
-        },
-        {
-          id: "sync_event_3",
-          summary: "Vale big meeting, job number 345678",
-          description: "",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T18:30:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T19:30:00" },
-        },
-        {
-          id: "sync_event_4",
-          summary: "79090 Hamburger Project for McDonald's Design meeting",
-          description: "",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T20:00:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T21:00:00" },
-        },
-        {
-          id: "sync_event_5",
-          summary: "78930 review for ironside",
-          description: "",
-          start: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T21:30:00" },
-          end: { dateTime: format(selectedDate, "yyyy-MM-dd") + "T22:30:00" },
-        },
-      ]
-
+      const events = await googleCalendarService.getCalendarEvents(weekStart, weekEnd)
       let addedCount = 0
 
-      for (const event of mockEvents) {
+      for (const event of events) {
+        // Skip all-day events or events without proper time
+        if (!event.start?.dateTime || !event.end?.dateTime) continue
+
         const existingEntry = timeEntries.find((entry) => entry.calendarEventId === event.id)
 
         if (!existingEntry) {
@@ -288,39 +237,20 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           const endDate = new Date(event.end.dateTime)
           const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60000)
 
-          // Extract job number from title or description
-          let jobNumber = "UNKNOWN"
-          const text = `${event.summary} ${event.description}`.toLowerCase()
-
-          // Look for patterns like "CAL-TH-2611", "job number 345678", "79090", etc.
-          const jobNumberPatterns = [/cal-th-(\d+)/i, /job number[:\s]+(\d+)/i, /\b(\d{5,6})\b/g]
-
-          for (const pattern of jobNumberPatterns) {
-            const match = text.match(pattern)
-            if (match) {
-              if (pattern.global) {
-                // For the general digit pattern, take the first match
-                jobNumber = match[0]
-              } else {
-                jobNumber = match[1] || match[0]
-              }
-              break
-            }
-          }
-
-          // Categorize based on keywords in title
-          let taskType = "uncategorized"
-          if (text.includes("meeting")) taskType = "meeting"
-          else if (text.includes("review")) taskType = "review"
-          else if (text.includes("planning")) taskType = "planning"
-          else if (text.includes("design")) taskType = "design"
-          else if (text.includes("development")) taskType = "development"
+          // Extract information from event
+          const fullText = `${event.summary || ""} ${event.description || ""}`
+          const jobNumber = extractJobNumber(fullText)
+          const clientName = extractClientName(fullText)
+          const jobPhase = extractJobPhase(fullText)
+          const taskType = categorizeTaskType(event.summary || "", event.description)
 
           addTimeEntry({
-            title: event.summary,
+            title: event.summary || "Untitled Event",
             start: event.start.dateTime,
             end: event.end.dateTime,
             jobNumber,
+            jobPhase,
+            clientName,
             taskType,
             duration: durationMinutes,
             calendarEventId: event.id,
@@ -339,21 +269,11 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       console.error("Error syncing with Google Calendar:", error)
       toast({
         title: "Sync Failed",
-        description: "Failed to sync with Google Calendar. Please check your connection and try again.",
+        description: "Failed to sync with Google Calendar. Please check your permissions and try again.",
         variant: "destructive",
       })
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  // New function to sync with Apps Script add-on
-  const syncWithAppsScript = async () => {
-    try {
-      // This runs silently in the background
-      console.log("Apps Script sync completed silently")
-    } catch (error) {
-      console.error("Error syncing with Apps Script:", error)
     }
   }
 
@@ -377,12 +297,12 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       return
     }
 
-    let csvContent = "Title,Job Number,Category,Start Time,End Time,Duration (minutes)\n"
+    let csvContent = "Title,Job Number,Client,Phase,Category,Start Time,End Time,Duration (minutes)\n"
 
     entriesForDay.forEach((entry) => {
       const startTime = format(parseISO(entry.start), "HH:mm")
       const endTime = format(parseISO(entry.end), "HH:mm")
-      csvContent += `"${entry.title}","${entry.jobNumber}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
+      csvContent += `"${entry.title}","${entry.jobNumber}","${entry.clientName || ""}","${entry.jobPhase || ""}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
     })
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
@@ -431,14 +351,14 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       return
     }
 
-    let csvContent = "Date,Title,Job Number,Category,Start Time,End Time,Duration (minutes)\n"
+    let csvContent = "Date,Title,Job Number,Client,Phase,Category,Start Time,End Time,Duration (minutes)\n"
 
     entriesForWeek.forEach((entry) => {
       const date = format(parseISO(entry.start), "yyyy-MM-dd")
       const startTime = format(parseISO(entry.start), "HH:mm")
       const endTime = format(parseISO(entry.end), "HH:mm")
 
-      csvContent += `"${date}","${entry.title}","${entry.jobNumber}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
+      csvContent += `"${date}","${entry.title}","${entry.jobNumber}","${entry.clientName || ""}","${entry.jobPhase || ""}","${entry.taskType}","${startTime}","${endTime}",${entry.duration}\n`
     })
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
@@ -622,7 +542,6 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     dailySummary,
     weeklySummary,
     syncWithGoogleCalendar,
-    syncWithAppsScript,
     exportTimesheet,
     exportWeeklyTimesheet,
     activeCategoryFilter,

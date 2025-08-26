@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState } from "react"
 
 function TimeTrackerContent() {
-  const { selectedDate } = useTimeTracking()
+  const { selectedDate, user, isAuthenticated } = useTimeTracking()
   const [activeView, setActiveView] = useState<"daily" | "weekly">("daily")
 
   return (
@@ -26,9 +26,11 @@ function TimeTrackerContent() {
             <h1 className="text-lg font-semibold text-gray-900">TimeTracker Buddy</h1>
           </div>
           <div className="flex items-center space-x-3">
-            <span className="text-sm text-gray-600">Tom Hiemstra</span>
+            <span className="text-sm text-gray-600">{isAuthenticated && user ? user.name : "Not signed in"}</span>
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-red-500 text-white text-sm">TH</AvatarFallback>
+              <AvatarFallback className="bg-red-500 text-white text-sm">
+                {isAuthenticated && user ? user.name?.charAt(0) || "U" : "G"}
+              </AvatarFallback>
             </Avatar>
           </div>
         </div>
